@@ -8,6 +8,8 @@
 // @grant        none
 // ==/UserScript==
 
+// This can get you banned if you use this in ranked so don't!
+
 (function() {
     'use strict';
 
