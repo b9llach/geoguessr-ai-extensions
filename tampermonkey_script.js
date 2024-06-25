@@ -12,10 +12,17 @@
     'use strict';
 
     let globalPanoID = undefined;
-    let roundNumber = 1; 
+    let roundNumber = 1;
+    let isGuessing = false;  // Flag to prevent multiple guesses at the same time
+    let previousGameID = null;
 
     function isNewGame() {
-        return roundNumber === 1;
+        const currentGameID = getGameID();
+        if (currentGameID !== previousGameID) {
+            previousGameID = currentGameID;
+            return true;
+        }
+        return false;
     }
 
     function getGameID() {
@@ -64,7 +71,7 @@
             "x-client": "web",
             "Content-Type": "application/json",
         };
-        await wait(5000); // Beginning of round
+        await wait(6000); // Beginning of round
         for (let i=0; i<5; i++) {
             try {
                 const response = await fetch(apiURL, {
@@ -83,21 +90,24 @@
                 return { resp: response, body: body };
             } catch (error) {
                 console.error("Error submitting guess:", error);
-                await wait(1000);
-                throw error;
+                await wait(3000);
             }
         }
+        throw new Error("Failed to submit guess after 5 attempts");
     }
 
     var originalOpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function(method, url) {
+
         if (method.toUpperCase() === 'POST' &&
             (url.startsWith('https://maps.googleapis.com/$rpc/google.internal.maps.mapsjs.v1.MapsJsInternalService/GetMetadata') ||
              url.startsWith('https://maps.googleapis.com/$rpc/google.internal.maps.mapsjs.v1.MapsJsInternalService/SingleImageSearch'))) {
 
             this.addEventListener('load', async function () {
+                if (isGuessing) return;  // Skip if a guess is already in progress
+                isGuessing = true;
                 try {
-                    let interceptedResult = this.responseText
+                    let interceptedResult = this.responseText;
                     let jsonResponse = JSON.parse(interceptedResult);
 
                     globalPanoID = jsonResponse[1][0][1][1];
@@ -108,7 +118,7 @@
 
                     try {
                         const { lat, lng } = await getCoordinates(globalPanoID);
-                        console.log(`Coordinates: lat = ${lat}, lng = ${lng}`);
+                        console.log(`Guessing (${lat}, ${lng})`);
 
                         try {
                             const result = await submitGuess(lat, lng, roundNumber);
@@ -120,13 +130,12 @@
                     } catch (error) {
                         console.error(`Failed to get coordinates for panoID ${globalPanoID}:`, error);
                     }
-
-                    roundNumber++;
-
                 } catch (error) {
                     console.error('Error parsing JSON response:', error);
                 }
 
+                roundNumber++;
+                isGuessing = false;
             });
         }
         return originalOpen.apply(this, arguments);
@@ -135,9 +144,9 @@
     var originalFetch = window.fetch;
     window.fetch = function() {
         return originalFetch.apply(this, arguments).then(function(response) {
-            if (response.url.includes('/games/') && response.url.includes('/round/')) {
+            if (response.url.includes('/duels/')) {
                 if (isNewGame()) {
-                    roundNumber = 1; 
+                    roundNumber = 1;
                     console.log('New game started. Round number reset to 1.');
                 }
             }
